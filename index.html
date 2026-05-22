@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>ResumeAI India</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#05091a;color:#e8eef8;font-family:Arial,sans-serif;min-height:100vh;}
+input,textarea,select{outline:none;font-family:inherit;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-thumb{background:#0057FF88;border-radius:2px;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.fade{animation:fadeIn 0.3s ease;}
+@keyframes spin{to{transform:rotate(360deg);}}
+@media print{
+  .no-print{display:none!important;}
+  body>*:not(#pframe){display:none!important;}
+  #pframe{position:static!important;background:#fff!important;overflow:visible!important;}
+  @page{size:A4;margin:8mm;}
+}
+</style>
+</head>
+<body>
+<div id="root">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;">
+    <div style="width:56px;height:56px;background:#0057FF;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:#fff;">R</div>
+    <p style="color:#7a90aa;font-size:15px;">ResumeAI India loading...</p>
+    <div style="width:32px;height:32px;border:3px solid rgba(0,87,255,0.2);border-top-color:#0057FF;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+  </div>
+</div>
+
+<!-- Load React FIRST, then our app -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>
+// Wait for React to be ready
+(function waitForReact() {
+  if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+    setTimeout(waitForReact, 50);
+    return;
+  }
+  initApp();
+})();
+
+function initApp() {
+const {useState,useCallback,useEffect,createElement:h} = React;
+
+// ── PLANS ──
+const PLANS={
+  free:{name:"Free",price:"₹0",period:"forever",color:"#2ecc71",icon:"🆓",
+    limits:{aiSummary:true,aiBullets:1,aiSkills:false,templates:3,pdfExports:5,resumeBuilds:3}},
+  pro:{name:"Pro",price:"₹1,249",period:"/month",color:"#0057FF",icon:"⚡",
+    limits:{aiSummary:true,aiBullets:999,aiSkills:true,templates:50,pdfExports:999,resumeBuilds:999}},
+  recruiter:{name:"Recruiter",price:"₹4,999",period:"/6 months",color:"#FF5733",icon:"🏢",
+    limits:{aiSummary:true,aiBullets:999,aiSkills:true,templates:50,pdfExports:999,resumeBuilds:999,bulkReview:true}}
+};
+
+const INIT_FORM={
+  name:"",email:"",phone:"",city:"",linkedin:"",portfolio:"",summary:"",
+  college:"",degree:"",branch:"",cgpa:"",gradYear:"",
+  school:"",board:"",marks10:"",year10:"",
+  jobs:[{jobTitle:"",company:"",duration:"",location:"",bullets:""}],
+  technicalSkills:"",softSkills:"",certifications:"",languages:"",tools:"",
+  customPersonal:[],
+  customEducation:[],
+  customExperience:[],
+  customSkills:[]
+};
+
+const SKILLS=["Java","Python","React","Angular","Spring Boot","MySQL","MongoDB","AWS","Docker","Git","REST API","Node.js","TypeScript","Tally","SAP","Excel","Power BI","Salesforce","JIRA","Agile/Scrum"];
+
+// ── AI CALL via Groq (free, CORS-friendly) ──
+// Get free key: https://console.groq.com → API Keys → Create
+var GROQ_KEY = "YOUR_GROQ_KEY_HERE"; // <-- Apna Groq key yahan paste karo
+
+async function callAI(system,user,maxTokens){
+  maxTokens=maxTokens||600;
+  if(!GROQ_KEY||GROQ_KEY==="YOUR_GROQ_KEY_HERE"){
+    throw new Error("Groq API key missing! File mein GROQ_KEY set karo.");
+  }
+  var res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","Authorization":"Bearer "+GROQ_KEY},
+    body:JSON.stringify({
+      model:"llama-3.3-70b-versatile",
+      max_tokens:maxTokens,
+      messages:[
+        {role:"system",content:system},
+        {role:"user",content:user}
+      ]
+    })
+  });
+  if(!res.ok){
+    var err=await res.json().catch(function(){return {};});
+    throw new Error(err.error&&err.error.message?err.error.message:"Groq error "+res.status);
+  }
+  var d=await res.json();
+  return (d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content)||"";
+}
+
+// ── BUILD RESUME HTML ──
+function buildResume(d,tpl){
+  var ac={modern:"#0057FF",classic:"#1a1a2e",minimal:"#2ecc71",creative:"#FF5733"}[tpl]||"#0057FF";
+  var jobs=(d.jobs||[]).filter(function(j){return j.company;}).map(function(j){
+    var bullets=j.bullets?j.bullets.split("\n").filter(Boolean).map(function(b){
+      return '<div style="font-size:9pt;color:#444;padding-left:10px;margin-bottom:2px;">'+(b.trim().startsWith("•")?b.trim():"• "+b.trim())+'</div>';
+    }).join(""):"";
+    return '<div style="margin-bottom:10px;">'+
+      '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;">'+
+      '<span style="font-weight:700;font-size:10pt;">'+j.jobTitle+'</span>'+
+      '<span style="font-size:8.5pt;color:#888;">'+j.duration+'</span></div>'+
+      '<div style="color:'+ac+';font-weight:600;font-size:9pt;margin-bottom:3px;">'+j.company+(j.location?" · "+j.location:"")+'</div>'+
+      bullets+'</div>';
+  }).join("");
+
+  var edu=d.college?
+    '<div style="margin-bottom:8px;">'+
+    '<div style="font-weight:700;font-size:9.5pt;">'+(d.degree||"")+" "+(d.branch||"")+'</div>'+
+    '<div style="font-size:8.5pt;color:#555;">'+d.college+'</div>'+
+    '<div style="font-size:8.5pt;color:#888;">'+(d.cgpa||"")+(d.gradYear?" · "+d.gradYear:"")+'</div></div>'+
+    (d.school?'<div style="margin-bottom:6px;"><div style="font-weight:700;font-size:9pt;">12th '+(d.board?"— "+d.board:"")+'</div>'+
+    '<div style="font-size:8.5pt;color:#666;">'+d.school+(d.marks10?" · "+d.marks10:"")+(d.year10?" · "+d.year10:"")+'</div></div>':"")
+    :"";
+
+  var skills=(d.technicalSkills||"").split(",").filter(Boolean).map(function(s){
+    return '<span style="background:'+ac+'18;color:'+ac+';border-radius:3px;padding:2px 7px;font-size:8pt;font-weight:700;margin:2px 2px 0 0;display:inline-block;">'+s.trim()+'</span>';
+  }).join("");
+
+  function sec(title,content){
+    return '<div style="margin-bottom:12px;">'+
+      '<div style="font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:'+ac+';border-bottom:1.5px solid '+ac+'44;padding-bottom:3px;margin-bottom:7px;">'+title+'</div>'+
+      content+'</div>';
+  }
+
+  // Custom fields helper
+  function renderCustomFields(fields){
+    if(!fields||!fields.length)return "";
+    return fields.filter(function(f){return f.label&&f.value;}).map(function(f){
+      return '<div style="display:flex;gap:8px;margin-bottom:4px;font-size:9pt;"><span style="font-weight:700;color:#444;min-width:100px;">'+f.label+':</span><span style="color:#555;">'+f.value+'</span></div>';
+    }).join("");
+  }
+
+  var customPersonalHtml = renderCustomFields(d.customPersonal);
+  var customEducationHtml = renderCustomFields(d.customEducation);
+  var customExperienceHtml = renderCustomFields(d.customExperience);
+  var customSkillsHtml = renderCustomFields(d.customSkills);
+
+  var extras=
+    (d.tools?sec("Tools & Software",'<div style="font-size:9pt;color:#444;">'+d.tools+'</div>'):"") +
+    (d.softSkills?sec("Soft Skills",'<div style="font-size:9pt;color:#444;">'+d.softSkills+'</div>'):"") +
+    (d.certifications?sec("Certifications",'<div style="font-size:9pt;color:#444;">'+d.certifications+'</div>'):"") +
+    (d.languages?sec("Languages",'<div style="font-size:9pt;color:#444;">'+d.languages+'</div>'):"") +
+    (customSkillsHtml?sec("Additional Details",customSkillsHtml):"");
+
+  if(tpl==="classic") return '<div style="font-family:Georgia,serif;font-size:10pt;color:#1a1a2e;line-height:1.6;padding:22px 26px;">'+
+    '<div style="text-align:center;border-bottom:2px solid #1a1a2e;padding-bottom:12px;margin-bottom:14px;">'+
+    '<div style="font-size:19pt;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">'+(d.name||"Your Name")+'</div>'+
+    '<div style="font-size:8.5pt;color:#555;margin-top:4px;">'+ [d.email,d.phone,d.city,d.linkedin].filter(Boolean).join("  |  ") +'</div></div>'+
+    (d.summary?sec("Objective",'<div style="font-size:9.5pt;color:#333;">'+d.summary+'</div>'):"") +
+    (jobs?sec("Work Experience",jobs):"") +
+    (edu?sec("Education",edu):"") +
+    (d.technicalSkills?sec("Technical Skills",'<div style="font-size:9.5pt;color:#333;">'+(d.technicalSkills||"").split(",").filter(Boolean).join("  ·  ")+'</div>'):"") +
+    extras+'</div>';
+
+  if(tpl==="minimal") return '<div style="font-family:Arial,sans-serif;font-size:10pt;color:#1a1a2e;line-height:1.55;padding:22px 26px;">'+
+    '<div style="margin-bottom:12px;"><div style="font-size:20pt;font-weight:800;color:#1a1a2e;margin-bottom:4px;">'+(d.name||"Your Name")+'</div>'+
+    '<div style="font-size:8.5pt;color:#888;">'+ [d.email,d.phone,d.city,d.linkedin].filter(Boolean).join("  •  ") +'</div>'+
+    '<div style="height:2px;background:#2ecc71;margin-top:8px;border-radius:2px;"></div></div>'+
+    (d.summary?'<div style="margin-bottom:12px;"><div style="font-size:8.5pt;font-weight:800;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Summary</div><div style="font-size:9.5pt;color:#444;">'+d.summary+'</div></div>':"") +
+    (jobs?'<div style="margin-bottom:12px;"><div style="font-size:8.5pt;font-weight:800;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Experience</div>'+jobs+'</div>':"") +
+    (edu?'<div style="margin-bottom:12px;"><div style="font-size:8.5pt;font-weight:800;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Education</div>'+edu+'</div>':"") +
+    (d.technicalSkills?'<div style="margin-bottom:12px;"><div style="font-size:8.5pt;font-weight:800;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Skills</div>'+skills+'</div>':"") +
+    extras+'</div>';
+
+  if(tpl==="creative") return '<div style="font-family:Arial,sans-serif;font-size:10pt;color:#1a1a2e;line-height:1.55;display:flex;min-height:500px;">'+
+    '<div style="width:30%;background:#1e1e2e;padding:18px 12px;flex-shrink:0;">'+
+    '<div style="border-bottom:2px solid #FF5733;padding-bottom:12px;margin-bottom:14px;">'+
+    '<div style="font-size:14pt;font-weight:800;color:#fff;line-height:1.2;margin-bottom:5px;">'+(d.name||"Your Name")+'</div>'+
+    (d.jobs&&d.jobs[0]&&d.jobs[0].jobTitle?'<div style="font-size:8pt;color:#FF5733;font-weight:700;text-transform:uppercase;">'+d.jobs[0].jobTitle+'</div>':"") +
+    '</div><div style="font-size:8pt;font-weight:800;text-transform:uppercase;color:#FF5733;margin-bottom:6px;">Contact</div>'+
+    [d.email,d.phone,d.city,d.linkedin].filter(Boolean).map(function(v){return '<div style="font-size:7.5pt;color:#aaa;margin-bottom:3px;word-break:break-all;">'+v+'</div>';}).join("")+
+    (d.technicalSkills?'<div style="font-size:8pt;font-weight:800;text-transform:uppercase;color:#FF5733;margin:12px 0 8px;">Skills</div>'+
+    (d.technicalSkills||"").split(",").slice(0,8).map(function(s,i){
+      return '<div style="margin-bottom:5px;"><div style="font-size:8pt;color:#ccc;margin-bottom:2px;">'+s.trim()+'</div>'+
+      '<div style="height:3px;background:rgba(255,255,255,0.1);border-radius:2px;"><div style="height:100%;width:'+(65+(i%4)*9)+'%;background:#FF5733;border-radius:2px;"></div></div></div>';
+    }).join(""):"") +
+    (d.languages?'<div style="font-size:8pt;font-weight:800;text-transform:uppercase;color:#FF5733;margin:10px 0 6px;">Languages</div><div style="font-size:8pt;color:#aaa;">'+d.languages+'</div>':"") +
+    '</div><div style="flex:1;padding:18px 16px;">'+
+    (d.summary?'<div style="margin-bottom:12px;"><div style="font-size:8pt;font-weight:800;text-transform:uppercase;color:#FF5733;border-bottom:1.5px solid #FF573333;padding-bottom:3px;margin-bottom:7px;">Profile</div><div style="font-size:9.5pt;color:#444;">'+d.summary+'</div></div>':"") +
+    (jobs?'<div style="margin-bottom:12px;"><div style="font-size:8pt;font-weight:800;text-transform:uppercase;color:#FF5733;border-bottom:1.5px solid #FF573333;padding-bottom:3px;margin-bottom:8px;">Experience</div>'+jobs+'</div>':"") +
+    (edu?'<div style="margin-bottom:12px;"><div style="font-size:8pt;font-weight:800;text-transform:uppercase;color:#FF5733;border-bottom:1.5px solid #FF573333;padding-bottom:3px;margin-bottom:8px;">Education</div>'+edu+'</div>':"") +
+    (d.certifications?'<div><div style="font-size:8pt;font-weight:800;text-transform:uppercase;color:#FF5733;border-bottom:1.5px solid #FF573333;padding-bottom:3px;margin-bottom:6px;">Certifications</div><div style="font-size:9pt;color:#444;">'+d.certifications+'</div></div>':"") +
+    '</div></div>';
+
+  // Modern Pro (default)
+  return '<div style="font-family:Arial,sans-serif;font-size:10pt;color:#1a1a2e;line-height:1.55;">'+
+    '<div style="background:#0057FF;padding:18px 22px;color:#fff;">'+
+    '<div style="font-size:20pt;font-weight:800;margin-bottom:4px;">'+(d.name||"Your Name")+'</div>'+
+    '<div style="font-size:8.5pt;opacity:0.88;">'+ [d.email,d.phone,d.city,d.linkedin,d.portfolio].filter(Boolean).join("  •  ") +'</div></div>'+
+    '<div style="padding:16px 22px;">'+
+    (d.summary?sec("Professional Summary",'<div style="font-size:9.5pt;color:#444;">'+d.summary+'</div>'):"") +
+    (customPersonalHtml?'<div style="margin-bottom:10px;padding:8px 12px;background:#f8f9ff;border-radius:6px;">'+customPersonalHtml+'</div>':"") +
+    '<div style="display:grid;grid-template-columns:1fr 0.5fr;gap:18px;">'+
+    '<div>'+(jobs?sec("Work Experience",jobs):"")+'</div>'+
+    '<div>'+(edu?sec("Education", edu + (customEducationHtml?'<div style="margin-top:6px;">'+customEducationHtml+'</div>':"")):"") +
+    (d.technicalSkills?sec("Technical Skills",skills):"") +
+    (d.tools?sec("Tools",'<div style="font-size:8.5pt;color:#444;">'+d.tools+'</div>'):"") +
+    (d.softSkills?sec("Soft Skills",'<div style="font-size:8.5pt;color:#444;">'+d.softSkills+'</div>'):"") +
+    (d.certifications?sec("Certifications",'<div style="font-size:8.5pt;color:#444;">'+d.certifications+'</div>'):"") +
+    (d.languages?sec("Languages",'<div style="font-size:8.5pt;color:#444;">'+d.languages+'</div>'):"") +
+    '</div></div></div></div>';
+}
+
+// ── PRINT PDF ──
+function printResume(html,fileName){
+  var old=document.getElementById("pframe");
+  if(old)old.remove();
+  var f=document.createElement("div");
+  f.id="pframe";
+  f.style.cssText="position:fixed;top:0;left:0;width:100%;height:100%;background:#f0f0f0;z-index:99999;display:flex;flex-direction:column;overflow:auto;";
+  f.innerHTML=
+    '<div class="no-print" style="background:#0057FF;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0;">'+
+    '<span style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">📄 '+fileName+'</span>'+
+    '<div style="display:flex;gap:8px;flex-shrink:0;">'+
+    '<button id="savebtn" style="background:#fff;color:#0057FF;border:none;border-radius:8px;padding:10px 18px;font-weight:800;font-size:14px;cursor:pointer;">💾 Save as PDF</button>'+
+    '<button id="closebtn" style="background:rgba(255,255,255,0.25);color:#fff;border:none;border-radius:8px;padding:10px 12px;font-weight:700;font-size:14px;cursor:pointer;">✕</button>'+
+    '</div></div>'+
+    '<div class="no-print" style="background:#f39c12;color:#fff;padding:8px 16px;font-size:12px;font-weight:600;flex-shrink:0;">'+
+    '📱 Android: Tap Save as PDF → then browser 3-dot menu → Print → Save as PDF'+
+    '</div>'+
+    '<div style="flex:1;overflow:auto;padding:16px;">'+
+    '<div style="max-width:760px;margin:0 auto;box-shadow:0 2px 20px rgba(0,0,0,0.15);">'+html+'</div>'+
+    '</div>';
+  document.body.appendChild(f);
+  document.getElementById("savebtn").onclick=function(){window.print();};
+  document.getElementById("closebtn").onclick=function(){f.remove();};
+}
+
+// ── SIMPLE UI HELPERS ──
+function btn(text,onClick,style){
+  var b=document.createElement("button");
+  b.textContent=text;
+  b.onclick=onClick;
+  Object.assign(b.style,{fontFamily:"Arial,sans-serif",cursor:"pointer"},style||{});
+  return b;
+}
+
+// ─── REACT COMPONENTS ───────────────────────────────────────────────────────
+
+function Toast(props){
+  if(!props.msg)return null;
+  var bg={success:"#2ecc71",error:"#e74c3c",info:"#0057FF",warning:"#f39c12"};
+  return h("div",{style:{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",zIndex:9999,background:bg[props.type]||bg.info,color:"#fff",borderRadius:10,padding:"11px 22px",fontSize:13,fontWeight:700,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",whiteSpace:"nowrap"}},props.msg);
+}
+
+function Inp(props){
+  return h("div",{style:{marginBottom:14}},
+    props.label&&h("label",{style:{display:"block",fontSize:11,fontWeight:700,color:"#7a90aa",marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}},props.label,props.required&&h("span",{style:{color:"#FF5733"}}," *")),
+    h("input",{type:props.type||"text",value:props.value,onChange:function(e){props.onChange(e.target.value);},placeholder:props.placeholder||"",style:{width:"100%",background:"rgba(255,255,255,0.07)",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 13px",color:"#e8eef8",fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}})
+  );
+}
+
+function Txta(props){
+  return h("div",{style:{marginBottom:14}},
+    props.label&&h("label",{style:{display:"block",fontSize:11,fontWeight:700,color:"#7a90aa",marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}},props.label),
+    h("textarea",{value:props.value,onChange:function(e){props.onChange(e.target.value);},placeholder:props.placeholder||"",rows:props.rows||4,style:{width:"100%",background:"rgba(255,255,255,0.07)",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 13px",color:"#e8eef8",fontSize:14,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}),
+    props.hint&&h("div",{style:{fontSize:11,color:"#445566",marginTop:4}},props.hint)
+  );
+}
+
+function Card(props){
+  return h("div",{style:Object.assign({background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:20},props.style||{})},props.children);
+}
+
+function AIBtn(props){
+  return h("button",{
+    onClick:props.locked?undefined:props.onClick,
+    disabled:props.busy,
+    style:{background:props.locked?"rgba(255,255,255,0.04)":props.busy?"rgba(0,87,255,0.3)":(props.color||"#0057FF"),color:props.locked?"#445":"#fff",border:"none",borderRadius:8,padding:"7px 14px",fontSize:11,fontWeight:700,cursor:(props.locked||props.busy)?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}
+  },props.busy?"⏳ Generating...":props.locked?("🔒 "+props.label):("✨ "+props.label));
+}
+
+function Bton(props){
+  return h("button",{
+    onClick:props.onClick,
+    disabled:props.disabled,
+    style:Object.assign({fontFamily:"Arial,sans-serif",cursor:props.disabled?"not-allowed":"pointer"},props.style||{})
+  },props.children);
+}
+// ── CUSTOM FIELDS COMPONENT ──
+function CustomFields(props){
+  var fields = props.fields || [];
+  var sectionKey = props.sectionKey;
+  var color = props.color || "#0057FF";
+
+  function addField(){
+    var newFields = fields.concat([{label:"",value:""}]);
+    props.onChange(newFields);
+  }
+  function removeField(idx){
+    var newFields = fields.filter(function(_,i){return i!==idx;});
+    props.onChange(newFields);
+  }
+  function updateField(idx,key,val){
+    var newFields = fields.map(function(f,i){
+      if(i!==idx) return f;
+      var nf = Object.assign({},f);
+      nf[key] = val;
+      return nf;
+    });
+    props.onChange(newFields);
+  }
+
+  return h("div",{style:{marginTop:14}},
+    fields.length>0&&h("div",{style:{marginBottom:10}},
+      fields.map(function(field,idx){
+        return h("div",{key:idx,style:{display:"flex",gap:8,marginBottom:10,alignItems:"flex-start"}},
+          h("div",{style:{flex:"0 0 35%"}},
+            h("input",{
+              value:field.label,
+              onChange:function(e){updateField(idx,"label",e.target.value);},
+              placeholder:"Field name (e.g. DOB)",
+              style:{width:"100%",background:"rgba(255,255,255,0.07)",border:"1.5px solid "+color+"55",borderRadius:8,padding:"9px 11px",color:"#e8eef8",fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}
+            })
+          ),
+          h("div",{style:{flex:1}},
+            h("input",{
+              value:field.value,
+              onChange:function(e){updateField(idx,"value",e.target.value);},
+              placeholder:"Value (e.g. 15 Jan 2000)",
+              style:{width:"100%",background:"rgba(255,255,255,0.07)",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"9px 11px",color:"#e8eef8",fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}
+            })
+          ),
+          h(Bton,{
+            onClick:function(){removeField(idx);},
+            style:{background:"rgba(231,76,60,0.15)",color:"#e74c3c",border:"none",borderRadius:7,padding:"9px 10px",fontSize:14,flexShrink:0}
+          },"✕")
+        );
+      })
+    ),
+    h(Bton,{
+      onClick:addField,
+      style:{background:"rgba("+( color==="0057FF"?"0,87,255":"46,204,113" )+",0.08)",border:"1.5px dashed rgba("+( color==="0057FF"?"0,87,255":"46,204,113" )+",0.35)",borderRadius:10,padding:"10px 16px",color:color==="0057FF"?"#4d9fff":"#2ecc71",fontSize:13,fontWeight:700,width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6}
+    },
+      h("span",{style:{fontSize:16}},"+"),
+      " Add Custom Field"
+    )
+  );
+}
+
+
+// ── LANDING ──
+function Landing(props){
+  var features=[
+    {icon:"🎯",title:"ATS Score Checker",desc:"Real keyword match vs any job description"},
+    {icon:"🤖",title:"AI Bullet Generator",desc:"Convert plain activities to ATS-optimized bullets"},
+    {icon:"📄",title:"4 Templates",desc:"Modern Pro, Classic IIT, Minimal, Creative Edge"},
+    {icon:"🔍",title:"Job Match Analysis",desc:"Skill gap + tailored resume suggestions"},
+    {icon:"🇮🇳",title:"India-First Design",desc:"Naukri, TCS iBegin, LinkedIn India optimized"},
+    {icon:"⚡",title:"PDF Export",desc:"ATS-friendly PDF download instantly"},
+  ];
+  return h("div",{style:{maxWidth:1000,margin:"0 auto",padding:"32px 16px"}},
+    h("div",{style:{textAlign:"center",marginBottom:40}},
+      h("div",{style:{background:"rgba(0,87,255,0.15)",color:"#4d9fff",border:"1px solid rgba(0,87,255,0.3)",borderRadius:20,padding:"3px 14px",fontSize:12,fontWeight:700,display:"inline-block",marginBottom:16}},"🇮🇳 India's Free AI Resume Builder"),
+      h("h1",{style:{fontSize:"clamp(28px,7vw,50px)",fontWeight:800,lineHeight:1.1,letterSpacing:-1.5,marginBottom:16}},
+        "Build resumes.",h("br",null),h("span",{style:{color:"#0057FF"}},"Get interviews."),h("br",null),
+        h("span",{style:{fontSize:"65%",color:"#8899bb",fontWeight:600}},"Completely Free.")
+      ),
+      h("p",{style:{fontSize:15,color:"#8899bb",lineHeight:1.7,marginBottom:28,maxWidth:420,margin:"0 auto 28px"}},"AI-powered ATS optimization for TCS, Infosys, Flipkart, Google India & 500+ companies."),
+      h("div",{style:{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}},
+        h(Bton,{onClick:props.onStart,style:{background:"#0057FF",color:"#fff",border:"none",borderRadius:10,padding:"14px 32px",fontSize:16,fontWeight:800,boxShadow:"0 6px 24px rgba(0,87,255,0.4)"}},"🚀 Build Resume — Free"),
+        h(Bton,{onClick:function(){props.setPlan("pro");},style:{background:"transparent",color:"#0057FF",border:"2px solid #0057FF",borderRadius:10,padding:"12px 24px",fontSize:14,fontWeight:700}},"View Pro Plans")
+      )
+    ),
+    h("div",{style:{background:"rgba(0,87,255,0.06)",border:"1px solid rgba(0,87,255,0.15)",borderRadius:16,padding:"24px",display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,textAlign:"center",marginBottom:36}},
+      [["2.4L+","Resumes Built"],["89%","ATS Pass Rate"],["4","Templates"],["Free","Forever Plan"]].map(function(s){
+        return h("div",{key:s[1]},h("div",{style:{fontSize:26,fontWeight:800,color:"#0057FF"}},s[0]),h("div",{style:{fontSize:12,color:"#8899bb",marginTop:4}},s[1]));
+      })
+    ),
+    h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14,marginBottom:36}},
+      features.map(function(f){
+        return h(Card,{key:f.title,style:{cursor:"pointer"},onClick:props.onStart},
+          h("div",{style:{fontSize:24,marginBottom:10}},f.icon),
+          h("div",{style:{fontWeight:700,fontSize:14,marginBottom:5}},f.title),
+          h("div",{style:{fontSize:12,color:"#7a90aa",lineHeight:1.5}},f.desc)
+        );
+      })
+    ),
+    h("div",{style:{textAlign:"center",marginBottom:14}},
+      h("h2",{style:{fontSize:22,fontWeight:800,marginBottom:6}},"Simple Pricing"),
+      h("p",{style:{color:"#7a90aa",fontSize:13}},"No hidden charges.")
+    ),
+    h("div",{style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}},
+      Object.entries(PLANS).map(function(entry){
+        var key=entry[0],p=entry[1];
+        return h("div",{key:key,style:{background:key==="pro"?"linear-gradient(135deg,#0057FF,#0040cc)":"rgba(255,255,255,0.04)",border:"2px solid "+(props.plan===key?p.color:"rgba(255,255,255,0.08)"),borderRadius:16,padding:18,textAlign:"center"}},
+          h("div",{style:{fontSize:22,fontWeight:800,letterSpacing:-1,marginBottom:2}},p.price),
+          h("div",{style:{fontSize:14,fontWeight:700,color:key==="pro"?"#a8d4ff":p.color,marginBottom:2}},p.name),
+          h("div",{style:{fontSize:11,color:key==="pro"?"rgba(255,255,255,0.6)":"#556677",marginBottom:12}},p.period),
+          h(Bton,{onClick:function(){props.setPlan(key);props.onStart();},style:{width:"100%",background:key==="pro"?"#fff":"#0057FF",color:key==="pro"?"#0057FF":"#fff",border:"none",borderRadius:8,padding:"10px",fontWeight:800,fontSize:13}},
+            key==="free"?"Start Free":key==="pro"?"Get Pro":"Get Recruiter"
+          )
+        );
+      })
+    )
+  );
+}
+
+// ── BUILDER ──
+var STEPS=[{id:"personal",label:"Personal",icon:"👤"},{id:"education",label:"Education",icon:"🎓"},{id:"experience",label:"Experience",icon:"💼"},{id:"skills",label:"Skills",icon:"⚡"},{id:"preview",label:"Preview",icon:"👁"}];
+
+function Builder(props){
+  var plan=props.plan;
+  var pc=PLANS[plan];
+  var _s=useState(0);var step=_s[0];var setStep=_s[1];
+  var _f=useState(INIT_FORM);var form=_f[0];var setForm=_f[1];
+  var _t=useState("modern");var tpl=_t[0];var setTpl=_t[1];
+  var _b=useState({});var busy=_b[0];var setBusy=_b[1];
+  var _toast=useState({msg:"",type:"info"});var toast=_toast[0];var setToast=_toast[1];
+  var _prev=useState(false);var showPrev=_prev[0];var setShowPrev=_prev[1];
+
+  function notify(msg,type){setToast({msg:msg,type:type||"info"});setTimeout(function(){setToast({msg:"",type:"info"});},3000);}
+  function upd(f,v){setForm(function(p){var n=Object.assign({},p);n[f]=v;return n;});}
+  function updJ(idx,f,v){setForm(function(p){var jobs=p.jobs.slice();jobs[idx]=Object.assign({},jobs[idx]);jobs[idx][f]=v;return Object.assign({},p,{jobs:jobs});});}
+  function setB(k,v){setBusy(function(p){var n=Object.assign({},p);n[k]=v;return n;});}
+
+  var techList=(form.technicalSkills||"").split(",").map(function(s){return s.trim();}).filter(Boolean);
+  var filled=Math.min(Math.round([form.name,form.email,form.phone,form.city,form.summary,form.college,form.degree,form.technicalSkills,form.jobs[0]&&form.jobs[0].company,form.jobs[0]&&form.jobs[0].jobTitle].filter(function(v){return v&&v.trim();}).length/10*100),100);
+
+  function aiSummary(){
+    setB("sum",true);
+    callAI("You are an expert Indian resume writer. Write a 3-line professional summary in English targeting Indian companies. ATS-friendly. Output ONLY the summary text, no labels or intro.",
+      "Name:"+form.name+"|Title:"+(form.jobs[0]&&form.jobs[0].jobTitle||"")+"|Company:"+(form.jobs[0]&&form.jobs[0].company||"")+"|Skills:"+form.technicalSkills)
+    .then(function(txt){upd("summary",txt.trim());notify("Summary ready!","success");})
+    .catch(function(e){notify("Error: "+e.message,"error");})
+    .finally(function(){setB("sum",false);});
+  }
+
+  function aiBullets(idx){
+    if(pc.limits.aiBullets<=1&&idx>0){notify("Free plan: 1 job only. Upgrade!","error");return;}
+    var j=form.jobs[idx];
+    if(!j.jobTitle){notify("Add job title first","error");return;}
+    setB("b"+idx,true);
+    callAI(
+      "You are an expert Indian resume writer. Write EXACTLY 3 resume bullet points. RULES: Output ONLY 3 bullet lines. Each line starts with •. Each starts with action verb. Include numbers/metrics. If no details given, invent realistic metrics for the role. NO questions. NO intro. NO explanation. JUST 3 bullet lines.",
+      "Job: "+j.jobTitle+" at "+(j.company||"company")+" | Duration: "+(j.duration||"")+" | Skills: "+form.technicalSkills
+    ).then(function(txt){
+      var lines=txt.split("\n").map(function(l){return l.trim();}).filter(function(l){return l.length>5;});
+      var cleaned=lines.slice(0,3).map(function(l){return l.replace(/^[-*\d.]\s*/,"• ").replace(/^•\s*/,"• ");}).join("\n");
+      updJ(idx,"bullets",cleaned||txt.trim());
+      notify("Bullets ready!","success");
+    }).catch(function(e){notify("Error: "+e.message,"error");})
+    .finally(function(){setB("b"+idx,false);});
+  }
+
+  function aiSkills(){
+    if(!pc.limits.aiSkills){notify("Upgrade to Pro for AI skills!","error");return;}
+    setB("sk",true);
+    callAI("Suggest 8 additional relevant technical skills for Indian job market. Output ONLY comma-separated skill names, nothing else.",
+      "Title:"+(form.jobs[0]&&form.jobs[0].jobTitle||"professional")+"|Existing:"+form.technicalSkills)
+    .then(function(txt){upd("technicalSkills",form.technicalSkills?form.technicalSkills+", "+txt.trim():txt.trim());notify("Skills added!","success");})
+    .catch(function(e){notify("Error: "+e.message,"error");})
+    .finally(function(){setB("sk",false);});
+  }
+
+  function exportPDF(){
+    var html=buildResume(form,tpl);
+    var name=(form.name||"Resume").replace(/\s+/g,"_");
+    printResume(html,name+"_Resume.pdf");
+    notify("Tap 💾 Save as PDF in the overlay!","success");
+  }
+
+  function renderStep(){
+    if(step===0) return h("div",null,
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}},
+        h(Inp,{label:"Full Name",required:true,value:form.name,onChange:function(v){upd("name",v);},placeholder:"Rahul Kumar Singh"}),
+        h(Inp,{label:"Email",type:"email",required:true,value:form.email,onChange:function(v){upd("email",v);},placeholder:"rahul@gmail.com"}),
+        h(Inp,{label:"Phone",type:"tel",required:true,value:form.phone,onChange:function(v){upd("phone",v);},placeholder:"+91 98765 43210"}),
+        h(Inp,{label:"City, State",value:form.city,onChange:function(v){upd("city",v);},placeholder:"Mumbai, Maharashtra"}),
+        h(Inp,{label:"LinkedIn",value:form.linkedin,onChange:function(v){upd("linkedin",v);},placeholder:"linkedin.com/in/rahul"}),
+        h(Inp,{label:"Portfolio/GitHub",value:form.portfolio,onChange:function(v){upd("portfolio",v);},placeholder:"github.com/rahul"})
+      ),
+      h("div",{style:{marginTop:6}},
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}},
+          h("label",{style:{fontSize:11,fontWeight:700,color:"#7a90aa",textTransform:"uppercase",letterSpacing:0.5}},"Professional Summary"),
+          h(AIBtn,{label:"AI Generate",busy:busy.sum,onClick:aiSummary})
+        ),
+        h(Txta,{value:form.summary,onChange:function(v){upd("summary",v);},rows:4,placeholder:"3-line professional intro — or click AI Generate above",hint:"💡 Fill Experience & Skills first for better AI output"})
+      ),
+      h(Card,{style:{background:"rgba(0,87,255,0.04)",border:"1px solid rgba(0,87,255,0.15)"}},
+        h("div",{style:{fontSize:13,fontWeight:700,color:"#4d9fff",marginBottom:4}},"➕ Extra Personal Details"),
+        h("div",{style:{fontSize:11,color:"#556677",marginBottom:8}},"Add custom fields like Date of Birth, Father's Name, Address, etc."),
+        h(CustomFields,{
+          fields:form.customPersonal,
+          sectionKey:"personal",
+          color:"0057FF",
+          onChange:function(v){upd("customPersonal",v);}
+        })
+      )
+    );
+
+    if(step===1) return h("div",{style:{display:"grid",gap:16}},
+      h(Card,{style:{background:"rgba(0,87,255,0.06)",border:"1px solid rgba(0,87,255,0.2)"}},
+        h("div",{style:{fontWeight:800,fontSize:14,color:"#4d9fff",marginBottom:14}},"🎓 Graduation / Post-Graduation"),
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}},
+          h(Inp,{label:"College / University",required:true,value:form.college,onChange:function(v){upd("college",v);},placeholder:"IIT Delhi / VIT / DU"}),
+          h(Inp,{label:"Degree",value:form.degree,onChange:function(v){upd("degree",v);},placeholder:"B.Tech / BCA / MBA"}),
+          h(Inp,{label:"Branch",value:form.branch,onChange:function(v){upd("branch",v);},placeholder:"Computer Science / Commerce"}),
+          h(Inp,{label:"CGPA / Percentage",value:form.cgpa,onChange:function(v){upd("cgpa",v);},placeholder:"8.5 CGPA / 85%"}),
+          h(Inp,{label:"Passing Year",value:form.gradYear,onChange:function(v){upd("gradYear",v);},placeholder:"2022"})
+        )
+      ),
+      h(Card,null,
+        h("div",{style:{fontWeight:800,fontSize:14,color:"#8899bb",marginBottom:14}},"📘 12th / Intermediate (Optional)"),
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}},
+          h(Inp,{label:"School",value:form.school,onChange:function(v){upd("school",v);},placeholder:"DAV Public School"}),
+          h(Inp,{label:"Board",value:form.board,onChange:function(v){upd("board",v);},placeholder:"CBSE / ICSE / State Board"}),
+          h(Inp,{label:"Percentage",value:form.marks10,onChange:function(v){upd("marks10",v);},placeholder:"92%"}),
+          h(Inp,{label:"Year",value:form.year10,onChange:function(v){upd("year10",v);},placeholder:"2018"})
+        )
+      ),
+      h("div",{style:{background:"rgba(46,204,113,0.06)",border:"1px solid rgba(46,204,113,0.2)",borderRadius:10,padding:12,fontSize:12,color:"#8899bb"}},"✅ India Tip: CGPA 6.5+ required for TCS/Infosys. GATE/CAT score? Always add if 90+ percentile."),
+      h(Card,{style:{background:"rgba(46,204,113,0.04)",border:"1px solid rgba(46,204,113,0.15)"}},
+        h("div",{style:{fontSize:13,fontWeight:700,color:"#2ecc71",marginBottom:4}},"➕ Extra Education Details"),
+        h("div",{style:{fontSize:11,color:"#556677",marginBottom:8}},"Add custom fields like Achievements, Rank, Extra Courses, etc."),
+        h(CustomFields,{
+          fields:form.customEducation,
+          sectionKey:"education",
+          color:"2ecc71",
+          onChange:function(v){upd("customEducation",v);}
+        })
+      )
+    );
+
+    if(step===2) return h("div",{style:{display:"grid",gap:14}},
+      h.apply(null,[React.Fragment,null].concat(form.jobs.map(function(j,idx){
+        return h(Card,{key:idx},
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}},
+            h("span",{style:{fontWeight:800,fontSize:14,color:"#4d9fff"}},idx===0?"💼 Latest Job":"💼 Job "+(idx+1)),
+            idx>0&&h(Bton,{onClick:function(){setForm(function(p){return Object.assign({},p,{jobs:p.jobs.filter(function(_,i){return i!==idx;})});});},style:{background:"rgba(231,76,60,0.15)",color:"#e74c3c",border:"none",borderRadius:7,padding:"4px 12px",fontSize:11}},"Remove")
+          ),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}},
+            h(Inp,{label:"Job Title",required:true,value:j.jobTitle,onChange:function(v){updJ(idx,"jobTitle",v);},placeholder:"Software Engineer / Sales Executive"}),
+            h(Inp,{label:"Company",required:true,value:j.company,onChange:function(v){updJ(idx,"company",v);},placeholder:"TCS / Infosys / Startup"}),
+            h(Inp,{label:"Duration",value:j.duration,onChange:function(v){updJ(idx,"duration",v);},placeholder:"Jun 2022 – Present"}),
+            h(Inp,{label:"Location",value:j.location,onChange:function(v){updJ(idx,"location",v);},placeholder:"Bangalore / Remote"})
+          ),
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}},
+            h("label",{style:{fontSize:11,fontWeight:700,color:"#7a90aa",textTransform:"uppercase",letterSpacing:0.5}},"Work Description"),
+            h(AIBtn,{label:"AI Bullets",busy:busy["b"+idx],onClick:function(){aiBullets(idx);},locked:pc.limits.aiBullets<=1&&idx>0})
+          ),
+          h("textarea",{value:j.bullets,onChange:function(e){updJ(idx,"bullets",e.target.value);},placeholder:"What you did — or click AI Bullets above\n• Led team of 5...\n• Achieved 120% quota...",rows:4,style:{width:"100%",background:"rgba(255,255,255,0.07)",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 13px",color:"#e8eef8",fontSize:14,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}})
+        );
+      }))),
+      h(Bton,{onClick:function(){setForm(function(p){return Object.assign({},p,{jobs:p.jobs.concat([{jobTitle:"",company:"",duration:"",location:"",bullets:""}])});});},style:{background:"rgba(0,87,255,0.08)",border:"1.5px dashed rgba(0,87,255,0.35)",borderRadius:12,padding:14,color:"#4d9fff",fontSize:14,fontWeight:700,width:"100%"}},"+ Add Job / Internship / Project"),
+      h("div",{style:{background:"rgba(255,215,0,0.06)",border:"1px solid rgba(255,215,0,0.2)",borderRadius:10,padding:12,fontSize:12,color:"#8899bb"}},"💡 ATS Tip: Add numbers — \"Improved performance by 40%\" beats vague descriptions."),
+      h(Card,{style:{background:"rgba(255,165,0,0.04)",border:"1px solid rgba(255,165,0,0.15)"}},
+        h("div",{style:{fontSize:13,fontWeight:700,color:"#f39c12",marginBottom:4}},"➕ Extra Experience Details"),
+        h("div",{style:{fontSize:11,color:"#556677",marginBottom:8}},"Add custom fields like Projects, Freelance Work, Volunteer Experience, etc."),
+        h(CustomFields,{
+          fields:form.customExperience,
+          sectionKey:"experience",
+          color:"f39c12",
+          onChange:function(v){upd("customExperience",v);}
+        })
+      )
+    );
+
+    if(step===3) return h("div",{style:{display:"grid",gap:14}},
+      h("div",null,
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}},
+          h("label",{style:{fontSize:11,fontWeight:700,color:"#7a90aa",textTransform:"uppercase",letterSpacing:0.5}},"Technical Skills *"),
+          h(AIBtn,{label:"AI Suggest",busy:busy.sk,onClick:aiSkills,locked:!pc.limits.aiSkills})
+        ),
+        h(Txta,{value:form.technicalSkills,onChange:function(v){upd("technicalSkills",v);},rows:3,placeholder:"Java, Python, React, SQL, AWS, Tally, Excel..."}),
+        !pc.limits.aiSkills&&h("div",{style:{fontSize:11,color:"#FF5733",marginTop:4}},"🔒 AI Skill Suggestions available in Pro plan"),
+        techList.length>0&&h("div",{style:{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}},
+          techList.map(function(s){return h("span",{key:s,style:{background:"rgba(0,87,255,0.15)",color:"#4d9fff",borderRadius:20,padding:"3px 12px",fontSize:12,fontWeight:600}},s);})
+        )
+      ),
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}},
+        h(Inp,{label:"Soft Skills",value:form.softSkills,onChange:function(v){upd("softSkills",v);},placeholder:"Leadership, Communication, Teamwork"}),
+        h(Inp,{label:"Languages Known",value:form.languages,onChange:function(v){upd("languages",v);},placeholder:"Hindi (Native), English (Professional)"})
+      ),
+      h(Inp,{label:"Tools & Software",value:form.tools,onChange:function(v){upd("tools",v);},placeholder:"Tally, VS Code, Jira, MS Office, Figma"}),
+      h(Txta,{label:"Certifications",value:form.certifications,onChange:function(v){upd("certifications",v);},rows:2,placeholder:"AWS Certified Developer • Google Analytics • TCS NQT: 1200"}),
+      h(Card,null,
+        h("div",{style:{fontSize:12,fontWeight:700,color:"#7a90aa",marginBottom:10}},"🇮🇳 Popular Skills — Click to Add"),
+        h("div",{style:{display:"flex",flexWrap:"wrap",gap:7}},
+          SKILLS.map(function(sk){
+            var has=techList.map(function(s){return s.toLowerCase();}).indexOf(sk.toLowerCase())>=0;
+            return h(Bton,{key:sk,onClick:function(){if(!has)upd("technicalSkills",form.technicalSkills?form.technicalSkills+", "+sk:sk);},style:{background:has?"rgba(46,204,113,0.15)":"rgba(255,255,255,0.05)",color:has?"#2ecc71":"#8899bb",border:"1px solid "+(has?"rgba(46,204,113,0.3)":"rgba(255,255,255,0.1)"),borderRadius:20,padding:"4px 13px",fontSize:12,fontWeight:600}},(has?"✓ ":"+ ")+sk);
+          })
+        )
+      ),
+      h(Card,{style:{background:"rgba(155,89,182,0.04)",border:"1px solid rgba(155,89,182,0.15)"}},
+        h("div",{style:{fontSize:13,fontWeight:700,color:"#9b59b6",marginBottom:4}},"➕ Extra Skills & Details"),
+        h("div",{style:{fontSize:11,color:"#556677",marginBottom:8}},"Add custom fields like Hobbies, Interests, Publications, Awards, References, etc."),
+        h(CustomFields,{
+          fields:form.customSkills,
+          sectionKey:"skills",
+          color:"9b59b6",
+          onChange:function(v){upd("customSkills",v);}
+        })
+      )
+    );
+
+    if(step===4) return h("div",{style:{display:"grid",gap:14}},
+      h(Card,null,
+        h("div",{style:{fontSize:14,fontWeight:700,color:"#c0cce0",marginBottom:14}},"🎨 Choose Template"),
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+          [{id:"modern",name:"Modern Pro",ac:"#0057FF",ats:88,plan:"free"},{id:"classic",name:"Classic IIT",ac:"#1a1a2e",ats:97,plan:"free"},{id:"minimal",name:"Minimal Clean",ac:"#2ecc71",ats:97,plan:"free"},{id:"creative",name:"Creative Edge",ac:"#FF5733",ats:72,plan:"pro"}].map(function(t){
+            var locked=t.plan==="pro"&&plan==="free";
+            return h(Bton,{key:t.id,onClick:function(){if(!locked)setTpl(t.id);},style:{background:tpl===t.id?(t.ac+"20"):"rgba(255,255,255,0.03)",border:"2px solid "+(tpl===t.id?t.ac:"rgba(255,255,255,0.08)"),borderRadius:12,padding:"12px 14px",textAlign:"left",color:"#e8eef8",opacity:locked?0.5:1,width:"100%"}},
+              h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+                h("span",{style:{fontWeight:700,fontSize:13,color:tpl===t.id?t.ac:"#c0cce0"}},t.name),
+                h("span",{style:{fontSize:10,fontWeight:800,color:t.ats>=90?"#2ecc71":"#f39c12",background:t.ats>=90?"rgba(46,204,113,0.15)":"rgba(243,156,18,0.15)",borderRadius:20,padding:"2px 8px"}},"ATS "+t.ats)
+              ),
+              locked&&h("div",{style:{fontSize:10,color:"#FF5733",marginTop:3}},"🔒 Pro Only")
+            );
+          })
+        )
+      ),
+      h(Card,{style:{padding:10}},
+        h("div",{style:{fontSize:12,fontWeight:700,color:"#7a90aa",marginBottom:10}},"Resume Preview"),
+        h("div",{style:{background:"#f5f5f5",borderRadius:8,overflow:"hidden",maxHeight:360,overflowY:"auto"},dangerouslySetInnerHTML:{__html:buildResume(form,tpl)}})
+      ),
+      h(Bton,{onClick:exportPDF,style:{background:"linear-gradient(135deg,#0057FF,#0040cc)",color:"#fff",border:"none",borderRadius:12,padding:"15px 24px",fontSize:15,fontWeight:800,width:"100%",boxShadow:"0 6px 24px rgba(0,87,255,0.4)"}},"📥 Download Resume as PDF"),
+      h("div",{style:{background:"rgba(0,87,255,0.06)",border:"1px solid rgba(0,87,255,0.2)",borderRadius:10,padding:12,fontSize:12,color:"#8899bb"}},
+        h("span",{style:{color:"#4d9fff",fontWeight:700}},"How to save: "),
+        "Resume opens in overlay → tap ",h("strong",{style:{color:"#fff"}},"💾 Save as PDF"),
+        " → Android: browser menu → Print → Save as PDF"
+      )
+    );
+  }
+
+  return h("div",{style:{display:"flex",flexDirection:"column",height:"calc(100vh - 56px)"}},
+    h("div",{style:{background:"rgba(5,9,26,0.95)",borderBottom:"1px solid rgba(255,255,255,0.06)",padding:"0 12px",overflowX:"auto",flexShrink:0,display:"flex",WebkitOverflowScrolling:"touch",alignItems:"center"}},
+      h("div",{style:{display:"flex",gap:4,padding:"8px 0",minWidth:"max-content"}},
+        STEPS.map(function(s,i){
+          return h("div",{key:i,onClick:function(){setStep(i);},style:{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",background:step===i?"rgba(0,87,255,0.2)":"transparent",color:step===i?"#fff":step>i?"#2ecc71":"#667788",fontWeight:step===i?700:500,fontSize:12,borderRadius:8,cursor:"pointer",whiteSpace:"nowrap"}},
+            s.icon," ",s.label,step>i&&h("span",{style:{color:"#2ecc71",fontSize:10}}," ✓")
+          );
+        })
+      ),
+      h("div",{style:{marginLeft:"auto",display:"flex",alignItems:"center",gap:8,paddingRight:4,flexShrink:0}},
+        h("span",{style:{fontSize:11,color:"#556677",whiteSpace:"nowrap"}},filled+"%"),
+        h(Bton,{onClick:function(){setShowPrev(function(p){return !p;});},style:{background:showPrev?"#0057FF":"rgba(255,255,255,0.07)",color:"#fff",border:"none",borderRadius:7,padding:"5px 10px",fontSize:11,fontWeight:700}},showPrev?"✏️ Form":"👁 Preview")
+      )
+    ),
+    h("div",{style:{height:2,background:"rgba(255,255,255,0.05)",flexShrink:0}},
+      h("div",{style:{height:"100%",width:(((step+1)/5)*100)+"%",background:"linear-gradient(90deg,#0057FF,#2ecc71)",transition:"width 0.4s"}})
+    ),
+    !showPrev&&h("div",{style:{flex:1,overflowY:"auto",padding:"20px 16px"}},
+      h("div",{style:{maxWidth:660,margin:"0 auto"}},
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}},
+          h("h2",{style:{fontSize:18,fontWeight:800}},STEPS[step].icon+" "+STEPS[step].label),
+          h("span",{style:{fontSize:12,color:"#556677"}},"Step "+(step+1)+"/5")
+        ),
+        renderStep(),
+        h("div",{style:{display:"flex",gap:10,marginTop:22,paddingBottom:24}},
+          h(Bton,{onClick:function(){setStep(function(s){return Math.max(0,s-1);});},disabled:step===0,style:{flex:1,background:"rgba(255,255,255,0.05)",color:step===0?"#334455":"#e8eef8",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:12,fontSize:14,fontWeight:700}},"← Back"),
+          step<4
+            ?h(Bton,{onClick:function(){setStep(function(s){return s+1;});},style:{flex:2,background:"#0057FF",color:"#fff",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700}},"Next: "+STEPS[step+1].label+" →")
+            :h(Bton,{onClick:exportPDF,style:{flex:2,background:"#2ecc71",color:"#fff",border:"none",borderRadius:10,padding:12,fontSize:14,fontWeight:700}},"📥 Export PDF")
+        )
+      )
+    ),
+    showPrev&&h("div",{style:{flex:1,overflowY:"auto",padding:16,background:"#080d20"}},
+      h("div",{style:{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}},
+        ["modern","classic","minimal","creative"].map(function(t){
+          return h(Bton,{key:t,onClick:function(){setTpl(t);},style:{background:tpl===t?"#0057FF":"rgba(255,255,255,0.05)",color:tpl===t?"#fff":"#8899bb",border:"none",borderRadius:7,padding:"5px 12px",fontSize:11,fontWeight:700,textTransform:"capitalize"}},t);
+        })
+      ),
+      h("div",{style:{background:"#f5f5f5",borderRadius:10,overflow:"hidden"},dangerouslySetInnerHTML:{__html:buildResume(form,tpl)}}),
+      h("div",{style:{marginTop:12,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+        h("div",{style:{background:"rgba(0,87,255,0.1)",border:"1px solid rgba(0,87,255,0.2)",borderRadius:10,padding:"10px 14px",textAlign:"center"}},
+          h("div",{style:{fontSize:22,fontWeight:800,color:"#0057FF"}},filled+"%"),
+          h("div",{style:{fontSize:10,color:"#7a90aa",marginTop:2}},"Complete")
+        ),
+        h("div",{style:{background:PLANS[plan].color+"18",border:"1px solid "+PLANS[plan].color+"40",borderRadius:10,padding:"10px 14px",textAlign:"center"}},
+          h("div",{style:{fontSize:22,fontWeight:800,color:PLANS[plan].color}},PLANS[plan].name),
+          h("div",{style:{fontSize:10,color:"#7a90aa",marginTop:2}},"Plan")
+        )
+      )
+    ),
+    h(Toast,toast)
+  );
+}
+
+// ── ATS CHECKER ──
+function ATSChecker(props){
+  var _r=useState("");var resume=_r[0];var setResume=_r[1];
+  var _j=useState("");var jd=_j[0];var setJd=_j[1];
+  var _res=useState(null);var result=_res[0];var setResult=_res[1];
+  var _l=useState(false);var loading=_l[0];var setLoading=_l[1];
+  var _tab=useState("score");var tab=_tab[0];var setTab=_tab[1];
+  var _t=useState({msg:"",type:"info"});var toast=_t[0];var setToast=_t[1];
+  function notify(msg,type){setToast({msg:msg,type:type||"info"});setTimeout(function(){setToast({msg:"",type:"info"});},3000);}
+
+  function analyze(){
+    if(!resume.trim()||!jd.trim()){notify("Fill both fields","error");return;}
+    setLoading(true);setResult(null);
+    callAI(
+      'ATS analyzer for Indian job market. Return ONLY valid JSON, no extra text:\n{"overallScore":85,"verdict":"Good","verdictReason":"one sentence","sections":{"keywords":{"score":80,"found":["Java","React"],"missing":["Docker","AWS"]},"experience":{"score":85,"feedback":"one line"},"education":{"score":90,"feedback":"one line"},"skills":{"score":80,"found":["Java"],"missing":["Kubernetes"]}},"topSuggestions":["suggestion1","suggestion2","suggestion3"]}',
+      "RESUME:\n"+resume+"\n\nJOB DESCRIPTION:\n"+jd,
+      800
+    ).then(function(raw){
+      setResult(JSON.parse(raw.replace(/```json|```/g,"").trim()));
+      setTab("score");notify("Analysis complete!","success");
+    }).catch(function(){notify("Try again","error");})
+    .finally(function(){setLoading(false);});
+  }
+
+  var vc={"Excellent":"#2ecc71","Good":"#4d9fff","Average":"#f39c12","Needs Work":"#e74c3c"};
+
+  return h("div",{style:{maxWidth:1000,margin:"0 auto",padding:"20px 16px"}},
+    h("div",{style:{textAlign:"center",marginBottom:18}},
+      h("h1",{style:{fontSize:24,fontWeight:800,letterSpacing:-0.5,marginBottom:6}},"🎯 ATS Score Checker"),
+      h("p",{style:{color:"#7a90aa",fontSize:13}},"Paste resume + job description → get ATS match score")
+    ),
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}},
+      h(Card,null,
+        h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:8}},
+          h("label",{style:{fontSize:13,fontWeight:700,color:"#c0cce0"}},"📄 Your Resume"),
+          h("span",{style:{fontSize:11,color:resume.trim()?"#2ecc71":"#445566"}},resume.trim()?(resume.trim().split(/\s+/).length+" words"):"Empty")
+        ),
+        h("textarea",{value:resume,onChange:function(e){setResume(e.target.value);},placeholder:"Paste full resume text...",rows:11,style:{width:"100%",background:"rgba(255,255,255,0.05)",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 13px",color:"#e8eef8",fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}})
+      ),
+      h(Card,null,
+        h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:8}},
+          h("label",{style:{fontSize:13,fontWeight:700,color:"#c0cce0"}},"💼 Job Description"),
+          h("span",{style:{fontSize:11,color:jd.trim()?"#2ecc71":"#445566"}},jd.trim()?(jd.trim().split(/\s+/).length+" words"):"Empty")
+        ),
+        h("textarea",{value:jd,onChange:function(e){setJd(e.target.value);},placeholder:"Paste JD from Naukri/LinkedIn...",rows:11,style:{width:"100%",background:"rgba(255,255,255,0.05)",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 13px",color:"#e8eef8",fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}})
+      )
+    ),
+    h("div",{style:{textAlign:"center",marginBottom:18}},
+      h(Bton,{onClick:analyze,disabled:loading,style:{background:loading?"rgba(0,87,255,0.4)":"#0057FF",color:"#fff",border:"none",borderRadius:12,padding:"13px 40px",fontSize:15,fontWeight:800,boxShadow:"0 4px 20px rgba(0,87,255,0.4)"}},loading?"⏳ Analyzing...":"🔍 Check ATS Score")
+    ),
+    result&&h("div",null,
+      h("div",{style:{background:(vc[result.verdict]||"#0057FF")+"15",border:"1px solid "+(vc[result.verdict]||"#0057FF")+"44",borderRadius:14,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}},
+        h("div",{style:{fontSize:28}},result.verdict==="Excellent"?"🏆":result.verdict==="Good"?"👍":result.verdict==="Average"?"⚠️":"🔧"),
+        h("div",{style:{flex:1}},
+          h("div",{style:{fontSize:17,fontWeight:800,color:vc[result.verdict]}},result.verdict+"!"),
+          h("div",{style:{fontSize:13,color:"#8899bb",marginTop:2}},result.verdictReason)
+        ),
+        h("div",{style:{textAlign:"center"}},
+          h("div",{style:{fontSize:40,fontWeight:800,color:vc[result.verdict]}},result.overallScore),
+          h("div",{style:{fontSize:11,color:"#556677"}},"ATS Score")
+        )
+      ),
+      h("div",{style:{display:"flex",gap:6,marginBottom:12,overflowX:"auto"}},
+        ["score","keywords","suggestions"].map(function(id){
+          return h(Bton,{key:id,onClick:function(){setTab(id);},style:{background:tab===id?"#0057FF":"rgba(255,255,255,0.05)",color:tab===id?"#fff":"#8899bb",border:"none",borderRadius:8,padding:"8px 14px",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}},id==="score"?"📊 Scores":id==="keywords"?"🔑 Keywords":"💡 Suggestions");
+        })
+      ),
+      tab==="score"&&h(Card,null,
+        h("div",{style:{fontWeight:700,fontSize:14,color:"#c0cce0",marginBottom:14}},"Section Scores"),
+        Object.entries(result.sections||{}).map(function(entry){
+          var key=entry[0],val=entry[1];
+          return h("div",{key:key,style:{marginBottom:14}},
+            h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:13}},
+              h("span",{style:{color:"#c0cce0",fontWeight:600,textTransform:"capitalize"}},key),
+              h("span",{style:{color:val.score>=75?"#2ecc71":val.score>=50?"#f39c12":"#e74c3c",fontWeight:800}},val.score+"/100")
+            ),
+            h("div",{style:{height:6,background:"rgba(255,255,255,0.07)",borderRadius:20}},
+              h("div",{style:{height:"100%",width:val.score+"%",background:val.score>=75?"#2ecc71":val.score>=50?"#f39c12":"#e74c3c",borderRadius:20}})
+            ),
+            val.feedback&&h("div",{style:{fontSize:11,color:"#556677",marginTop:3}},val.feedback)
+          );
+        })
+      ),
+      tab==="keywords"&&h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}},
+        [["✅ Found",(result.sections&&result.sections.keywords&&result.sections.keywords.found)||[],"#2ecc71"],
+         ["❌ Missing",(result.sections&&result.sections.keywords&&result.sections.keywords.missing)||[],"#e74c3c"]].map(function(entry){
+          var label=entry[0],items=entry[1],color=entry[2];
+          return h(Card,{key:label},
+            h("div",{style:{fontSize:13,fontWeight:700,color:color,marginBottom:10}},label+" ("+items.length+")"),
+            h("div",null,items.map(function(k){return h("span",{key:k,style:{display:"inline-block",background:color+"15",color:color,border:"1px solid "+color+"33",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700,margin:"2px"}},k);}))
+          );
+        })
+      ),
+      tab==="suggestions"&&h(Card,null,
+        h("div",{style:{fontWeight:700,fontSize:14,color:"#c0cce0",marginBottom:14}},"💡 Top Suggestions"),
+        (result.topSuggestions||[]).map(function(s,i){
+          return h("div",{key:i,style:{display:"flex",gap:12,marginBottom:12,padding:"12px 14px",background:"rgba(0,87,255,0.06)",border:"1px solid rgba(0,87,255,0.15)",borderRadius:10}},
+            h("div",{style:{width:24,height:24,background:"#0057FF",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:11,flexShrink:0,color:"#fff"}},i+1),
+            h("span",{style:{fontSize:13,color:"#c0cce0",lineHeight:1.6}},s)
+          );
+        })
+      )
+    ),
+    h(Toast,toast)
+  );
+}
+
+// ── PLANS PAGE ──
+function PlansPage(props){
+  var plan=props.plan;
+  var _t=useState({msg:"",type:"info"});var toast=_t[0];var setToast=_t[1];
+  function notify(msg,type){setToast({msg:msg,type:type||"info"});setTimeout(function(){setToast({msg:"",type:"info"});},3000);}
+  var features={
+    free:["3 Resume Builds/month","AI Summary","AI Bullets (1 job)","5 ATS Checks/month","3 Free Templates","5 PDF Exports/month"],
+    pro:["Unlimited Builds","AI Bullets All Jobs","AI Skill Suggestions","Unlimited ATS Checks","50+ Templates","Unlimited PDF Export","DOCX Export","Salary Insights"],
+    recruiter:["Everything in Pro","Bulk Resume Review","Candidate Tracking","Team Access (5 users)","ATS Integration","Dedicated Manager"]
+  };
+  return h("div",{style:{maxWidth:860,margin:"0 auto",padding:"24px 16px"}},
+    h("div",{style:{textAlign:"center",marginBottom:26}},
+      h("h1",{style:{fontSize:24,fontWeight:800,letterSpacing:-0.5,marginBottom:6}},"Simple Pricing"),
+      h("p",{style:{color:"#7a90aa",fontSize:13}},"No hidden charges. Cancel anytime. 7-day refund guarantee.")
+    ),
+    h("div",{style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:24}},
+      Object.entries(PLANS).map(function(entry){
+        var key=entry[0],p=entry[1];
+        return h("div",{key:key,style:{background:key==="pro"?"linear-gradient(135deg,#0057FF,#0040cc)":"rgba(255,255,255,0.04)",border:"2px solid "+(plan===key?p.color:"rgba(255,255,255,0.08)"),borderRadius:18,padding:20,position:"relative",textAlign:"center"}},
+          key==="pro"&&h("div",{style:{position:"absolute",top:-12,left:"50%",transform:"translateX(-50%)",background:"#FFD700",color:"#1a1a2e",borderRadius:20,padding:"3px 14px",fontSize:11,fontWeight:800,whiteSpace:"nowrap"}},"Most Popular"),
+          h("div",{style:{fontSize:24,fontWeight:800,letterSpacing:-1,marginBottom:2}},p.price),
+          h("div",{style:{fontSize:15,fontWeight:700,color:key==="pro"?"#a8d4ff":p.color,marginBottom:2}},p.name),
+          h("div",{style:{fontSize:11,color:key==="pro"?"rgba(255,255,255,0.6)":"#556677",marginBottom:14}},p.period),
+          h("div",{style:{marginBottom:16,textAlign:"left"}},
+            (features[key]||[]).map(function(f){
+              return h("div",{key:f,style:{display:"flex",gap:8,marginBottom:7,fontSize:12,color:key==="pro"?"rgba(255,255,255,0.9)":"#c0cce0"}},
+                h("span",{style:{color:key==="pro"?"#a8d4ff":p.color,fontWeight:800,flexShrink:0}},"✓"),f
+              );
+            })
+          ),
+          h(Bton,{onClick:function(){props.setPlan(key);notify(p.name+" plan activated!","success");},style:{width:"100%",background:plan===key?(key==="pro"?"#fff":"#0057FF"):(p.color+"22"),color:plan===key?(key==="pro"?"#0057FF":"#fff"):p.color,border:"1.5px solid "+p.color,borderRadius:10,padding:"11px",fontSize:13,fontWeight:800}},
+            plan===key?"✓ Current Plan":key==="free"?"Downgrade":"Upgrade to "+p.name
+          )
+        );
+      })
+    ),
+    h(Card,null,
+      h("div",{style:{fontWeight:700,fontSize:14,color:"#c0cce0",marginBottom:14}},"🔒 Secured via Razorpay"),
+      h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}},
+        [["💳","UPI / Cards / Net Banking","GPay, PhonePe, Visa, Rupay"],["↩️","7-Day Refund","Full refund, no questions"],["📧","GST Invoice","Auto-sent to email"],["🔄","Cancel Anytime","No lock-in period"]].map(function(item){
+          return h("div",{key:item[1],style:{display:"flex",gap:10}},
+            h("span",{style:{fontSize:20,flexShrink:0}},item[0]),
+            h("div",null,
+              h("div",{style:{fontSize:12,fontWeight:700,color:"#c0cce0",marginBottom:3}},item[1]),
+              h("div",{style:{fontSize:11,color:"#7a90aa"}},item[2])
+            )
+          );
+        })
+      )
+    ),
+    h(Toast,toast)
+  );
+}
+
+// ── ROOT APP ──
+var NAV=[{id:"home",label:"Home",icon:"🏠"},{id:"builder",label:"Build",icon:"📝"},{id:"ats",label:"ATS Check",icon:"🎯"},{id:"plans",label:"Plans",icon:"💰"}];
+
+function App(){
+  var _p=useState("home");var page=_p[0];var setPage=_p[1];
+  var _pl=useState("free");var plan=_pl[0];var setPlan=_pl[1];
+  var _m=useState(false);var menu=_m[0];var setMenu=_m[1];
+  var pc=PLANS[plan];
+
+  return h("div",{style:{fontFamily:"Arial,sans-serif",background:"#05091a",color:"#e8eef8",minHeight:"100vh"}},
+    h("nav",{style:{background:"rgba(5,9,26,0.97)",backdropFilter:"blur(20px)",borderBottom:"1px solid rgba(255,255,255,0.07)",padding:"0 16px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:80}},
+      h("div",{onClick:function(){setPage("home");},style:{display:"flex",alignItems:"center",gap:8,cursor:"pointer",flexShrink:0}},
+        h("div",{style:{width:32,height:32,background:"#0057FF",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:16,color:"#fff"}},"R"),
+        h("span",{style:{fontWeight:800,fontSize:15}},"ResumeAI ",h("span",{style:{color:"#0057FF"}},"India"))
+      ),
+      h("div",{style:{display:"flex",gap:2,overflowX:"auto"}},
+        NAV.slice(1).map(function(item){
+          return h("div",{key:item.id,onClick:function(){setPage(item.id);},style:{cursor:"pointer",padding:"6px 10px",borderRadius:8,color:page===item.id?"#fff":"#8899bb",background:page===item.id?"rgba(0,87,255,0.2)":"transparent",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap"}},
+            item.icon," ",item.label
+          );
+        })
+      ),
+      h("div",{style:{display:"flex",gap:8,alignItems:"center",flexShrink:0}},
+        h(Bton,{onClick:function(){setPage("plans");},style:{background:pc.color+"20",color:pc.color,border:"1px solid "+pc.color+"50",borderRadius:20,padding:"5px 11px",fontSize:11,fontWeight:700}},pc.icon+" "+pc.name),
+        h(Bton,{onClick:function(){setMenu(function(m){return !m;});},style:{background:"rgba(255,255,255,0.07)",color:"#fff",border:"none",borderRadius:8,padding:"7px 10px",fontSize:14}},"☰")
+      )
+    ),
+    menu&&h("div",{style:{background:"rgba(5,9,26,0.98)",borderBottom:"1px solid rgba(255,255,255,0.07)",padding:"8px 16px"}},
+      NAV.map(function(item){
+        return h("div",{key:item.id,onClick:function(){setPage(item.id);setMenu(false);},style:{padding:"10px 12px",fontSize:14,fontWeight:600,color:page===item.id?"#fff":"#8899bb",background:page===item.id?"rgba(0,87,255,0.15)":"transparent",borderRadius:8,marginBottom:4,cursor:"pointer"}},
+          item.icon+" "+item.label
+        );
+      })
+    ),
+    h("div",{key:page,className:"fade"},
+      page==="home"&&h(Landing,{onStart:function(){setPage("builder");},plan:plan,setPlan:setPlan}),
+      page==="builder"&&h(Builder,{plan:plan}),
+      page==="ats"&&h(ATSChecker,{plan:plan}),
+      page==="plans"&&h(PlansPage,{plan:plan,setPlan:setPlan})
+    )
+  );
+}
+
+// ── MOUNT ──
+var root=ReactDOM.createRoot(document.getElementById("root"));
+root.render(h(App,null));
+
+} // end initApp
+</script>
+</body>
+</html>
