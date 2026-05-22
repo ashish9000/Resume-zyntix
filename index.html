@@ -72,7 +72,7 @@ var GROQ_KEY = "YOUR_GROQ_KEY_HERE"; // <-- Apna Groq key yahan paste karo
 
 async function callAI(system,user,maxTokens){
   maxTokens=maxTokens||600;
-  if(!GROQ_KEY||GROQ_KEY==="YOUR_GROQ_KEY_HERE"){
+  if(!GROQ_KEY||GROQ_KEY==="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"){
     throw new Error("Groq API key missing! File mein GROQ_KEY set karo.");
   }
   var res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
